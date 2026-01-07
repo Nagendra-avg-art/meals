@@ -1,30 +1,49 @@
-import React, { useState } from 'react';
-import { CheckCircle, Phone, Copy, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, Phone, Copy, MessageCircle, Smartphone } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { LandingPage, LoginPage, DonorForm, DonorDashboard, ReceiverDashboard, ReceiverBookings } from './components/PageViews';
 import { Button } from './components/Common';
 import { ViewState, Donation, User, NotificationItem, ToastState, ContactModalState } from './types';
-import { INITIAL_DONATIONS, INITIAL_USERS } from './constants';
+import { INITIAL_USERS, INITIAL_DONATIONS } from './constants';
 
 export default function App() {
   const [view, setView] = useState<ViewState>('landing'); 
   const [donations, setDonations] = useState<Donation[]>(INITIAL_DONATIONS);
   const [notification, setNotification] = useState<ToastState | null>(null); 
-  const [notificationHistory, setNotificationHistory] = useState<NotificationItem[]>([
-    { id: 101, text: "Welcome to ShareMeal! Start donating or finding food.", time: "2 hours ago", read: true }
-  ]);
+  const [notificationHistory, setNotificationHistory] = useState<NotificationItem[]>([]);
   
   // Modals
   const [claimedDonation, setClaimedDonation] = useState<Donation | null>(null);
   const [contactModal, setContactModal] = useState<ContactModalState | null>(null); 
   
-  // Auth State
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // Local User State (Mock Auth)
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
-  // Fake Database
-  const [registeredUsers, setRegisteredUsers] = useState<User[]>(INITIAL_USERS);
 
+  // Derived State
+  const isLoggedIn = currentUser !== null;
+
+  // --- EXPIRATION CHECKER ---
+  useEffect(() => {
+    // Check for expired donations every minute
+    const interval = setInterval(() => {
+      setDonations(currentDonations => {
+        let hasChanges = false;
+        const now = Date.now();
+        const updated = currentDonations.map(d => {
+          if (d.status === 'available' && d.expiresAt < now) {
+             hasChanges = true;
+             return { ...d, status: 'expired' as const };
+          }
+          return d;
+        });
+        return hasChanges ? updated : currentDonations;
+      });
+    }, 60000); // 1 minute
+
+    return () => clearInterval(interval);
+  }, []);
+  
   const showToast = (message: string, type: 'success' | 'error' | 'neutral' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
@@ -37,8 +56,10 @@ export default function App() {
         time: 'Just now',
         read: false
     };
-    setNotificationHistory([newNote, ...notificationHistory]);
+    setNotificationHistory(prev => [newNote, ...prev]);
   };
+
+  // --- ACTIONS ---
 
   const openMaps = (address: string) => {
     const encoded = encodeURIComponent(address);
@@ -49,74 +70,123 @@ export default function App() {
     if (isLoggedIn) {
       setView(targetView);
     } else {
-      // NOTE: We used to track redirectAfterLogin here, but requirements changed 
-      // to always redirect to Home after login.
       setView('login');
     }
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
+  const handleNewDonationClick = () => {
+    if (!isLoggedIn) {
+        setView('login');
+        return;
+    }
+    setView('donor');
+  };
+
+  const handleLogout = async () => {
     setCurrentUser(null);
     setView('landing');
     showToast("Logged out successfully", "neutral");
   };
 
-  const handleAddDonation = (newDonation: Donation) => {
-    setDonations([newDonation, ...donations]);
-    addNotificationLog(`Donation Posted: ${newDonation.foodItems}`);
+  const handleAddDonation = async (newDonationData: Omit<Donation, 'id' | 'timestamp' | 'createdAt' | 'status' | 'distance' | 'userId'>) => {
+    if (!currentUser) return;
+    
+    // Simulate random distance between 0.5 and 15.0 km
+    const randomDistance = (Math.random() * 14.5 + 0.5).toFixed(1);
+
+    const newDonation: Donation = {
+        id: `local-${Date.now()}`,
+        userId: currentUser.id,
+        ...newDonationData, // This now includes expiresAt from DonorForm
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        createdAt: Date.now(),
+        status: 'available',
+        distance: `${randomDistance} km`
+    };
+
+    setDonations(prev => [newDonation, ...prev]);
+    addNotificationLog(`Donation Posted: ${newDonationData.foodItems}`);
     showToast("Thank you! Your donation has been listed.");
     setView('donor-dashboard');
   };
 
-  const handleClaimDonation = (id: number) => {
+  const handleClaimDonation = async (id: string) => {
     if (!isLoggedIn) {
         setView('login');
         return;
     }
-
     const donation = donations.find(d => d.id === id);
     if (!donation) return;
 
-    setDonations(donations.map(d => 
-      d.id === id ? { ...d, status: 'claimed', claimedByUserId: currentUser?.id } : d
-    ));
-    
-    addNotificationLog(`Booking Confirmed: ${donation.foodItems} from ${donation.donorName}`);
-    setClaimedDonation(donation);
+    // Prevent donor from claiming their own food
+    if (donation.userId === currentUser?.id) {
+        showToast("You cannot claim your own donation.", "error");
+        return;
+    }
+
+    // Check if expired (double check in case UI is stale)
+    if (donation.expiresAt < Date.now()) {
+        showToast("This donation has expired.", "error");
+        setDonations(prev => prev.map(d => d.id === id ? { ...d, status: 'expired' } : d));
+        return;
+    }
+
+    const updatedDonation = {
+        ...donation,
+        status: 'claimed' as const,
+        claimedByUserId: currentUser?.id
+    };
+
+    setDonations(prev => prev.map(d => d.id === id ? updatedDonation : d));
+    addNotificationLog(`Booking Confirmed: ${donation.foodItems}`);
+    setClaimedDonation(updatedDonation);
   };
 
-  const handleCompleteDonation = (id: number) => {
-    setDonations(donations.map(d => 
-      d.id === id ? { ...d, status: 'completed' } : d
-    ));
+  const handleCompleteDonation = async (id: string) => {
+    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: 'completed' } : d));
     showToast("Pickup confirmed! Thank you.", "success");
   };
 
-  const handleCancelDonation = (id: number) => {
-    setDonations(donations.map(d => 
-      d.id === id ? { ...d, status: 'cancelled' } : d
-    ));
+  const handleCancelDonation = async (id: string) => {
+    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: 'cancelled' } : d));
     showToast("Donation cancelled", "neutral");
   };
 
-  const handleLoginSuccess = (user: User) => {
-    setIsLoggedIn(true);
-    setCurrentUser(user);
-    addNotificationLog(`Welcome back, ${user.name}!`);
-    showToast("Login successful!");
-    // Requirement: After login, always go to home page (landing)
-    setView('landing');
+  const handleLogin = async (phone: string, pass: string) => {
+      // Mock Login Logic
+      const foundUser = users.find(u => u.phone === phone && u.password === pass);
+
+      if (foundUser) {
+          setCurrentUser(foundUser);
+          showToast("Login successful!");
+          setView('landing');
+      } else {
+          showToast("Invalid credentials. Try 1234567890 / 123", "error");
+      }
   };
 
-  const handleRegisterUser = (user: User) => {
-    setRegisteredUsers([...registeredUsers, user]);
-    setIsLoggedIn(true);
-    setCurrentUser(user);
-    addNotificationLog(`Welcome to ShareMeal, ${user.name}!`);
-    showToast("Account created successfully!");
-    // Requirement: After registration/login, always go to home page
-    setView('landing');
+  const handleRegister = async (phone: string, pass: string, name: string) => {
+      // Mock Register Logic
+      const existingUser = users.find(u => u.phone === phone);
+      if (existingUser) {
+          showToast("Phone number already registered", "error");
+          return;
+      }
+
+      const newUser: User = {
+          id: `user-${Date.now()}`,
+          name,
+          phone,
+          password: pass,
+          isVerified: true // Auto-verify new users
+      };
+
+      setUsers(prev => [...prev, newUser]);
+      setCurrentUser(newUser);
+
+      addNotificationLog(`Welcome to ShareMeal, ${name}!`);
+      showToast("Account created successfully!");
+      setView('landing');
   };
 
   // --- RENDER ---
@@ -229,9 +299,8 @@ export default function App() {
       
       {view === 'login' && (
         <LoginPage 
-          onLoginSuccess={handleLoginSuccess} 
-          users={registeredUsers}
-          onRegisterUser={handleRegisterUser}
+          onLogin={handleLogin}
+          onRegister={handleRegister}
           onCancel={() => setView('landing')}
         />
       )}
@@ -248,7 +317,7 @@ export default function App() {
         <DonorDashboard 
           donations={donations} 
           currentUser={currentUser}
-          onNewDonationClick={() => handleAuthRequired('donor')} 
+          onNewDonationClick={handleNewDonationClick} 
           onCancelDonation={handleCancelDonation}
           onCompleteDonation={handleCompleteDonation}
         />

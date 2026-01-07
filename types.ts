@@ -5,10 +5,11 @@ export interface User {
   name: string;
   phone: string;
   password?: string;
+  isVerified?: boolean;
 }
 
 export interface Donation {
-  id: number;
+  id: string;
   userId: string;
   donorName: string;
   foodItems: string;
@@ -16,9 +17,11 @@ export interface Donation {
   location: string;
   phoneNumber: string;
   timestamp: string;
-  status: 'available' | 'claimed' | 'cancelled' | 'completed';
+  status: 'available' | 'claimed' | 'cancelled' | 'completed' | 'expired';
   distance: string;
   claimedByUserId?: string;
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface NotificationItem {
