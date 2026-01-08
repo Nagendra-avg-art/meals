@@ -1,14 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Phone, Copy, MessageCircle, Smartphone } from 'lucide-react';
+import { CheckCircle, Phone, Copy, MessageCircle, Database } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { LandingPage, LoginPage, DonorForm, DonorDashboard, ReceiverDashboard, ReceiverBookings } from './components/PageViews';
 import { Button } from './components/Common';
 import { ViewState, Donation, User, NotificationItem, ToastState, ContactModalState } from './types';
-import { INITIAL_USERS, INITIAL_DONATIONS } from './constants';
+import { INITIAL_DONATIONS } from './constants';
+import { auth, db } from './firebase';
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut,
+  updateProfile
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  updateDoc, 
+  doc, 
+  query, 
+  orderBy,
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
 
 export default function App() {
   const [view, setView] = useState<ViewState>('landing'); 
-  const [donations, setDonations] = useState<Donation[]>(INITIAL_DONATIONS);
+  const [donations, setDonations] = useState<Donation[]>([]);
   const [notification, setNotification] = useState<ToastState | null>(null); 
   const [notificationHistory, setNotificationHistory] = useState<NotificationItem[]>([]);
   
@@ -16,38 +35,88 @@ export default function App() {
   const [claimedDonation, setClaimedDonation] = useState<Donation | null>(null);
   const [contactModal, setContactModal] = useState<ContactModalState | null>(null); 
   
-  // Local User State (Mock Auth)
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   // Derived State
   const isLoggedIn = currentUser !== null;
 
-  // --- EXPIRATION CHECKER ---
+  // --- 1. AUTH LISTENER ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Fetch extra user details (phone/name) from Firestore 'users' collection
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        try {
+            const userDoc = await getDoc(userDocRef);
+            if (userDoc.exists()) {
+               const userData = userDoc.data() as User;
+               setCurrentUser(userData);
+            } else {
+               // Fallback if doc doesn't exist yet
+               setCurrentUser({
+                 id: firebaseUser.uid,
+                 name: firebaseUser.displayName || 'User',
+                 phone: '', 
+                 isVerified: true
+               });
+            }
+        } catch (e) {
+            console.error("Error fetching user profile:", e);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 2. DATA LISTENER (Real-time Database) ---
+  useEffect(() => {
+    // Subscribe to donations collection, ordered by newest first
+    const q = query(collection(db, 'donations'), orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedDonations: Donation[] = [];
+      snapshot.forEach((doc) => {
+        fetchedDonations.push({ id: doc.id, ...doc.data() } as Donation);
+      });
+      setDonations(fetchedDonations);
+    }, (error) => {
+        console.error("Database connection error:", error);
+        if (error.code === 'permission-denied') {
+            showToast("Database permission denied. Check Firebase rules.", "error");
+        }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // --- 3. EXPIRATION CHECKER ---
+  // Runs every minute to auto-expire items in the database
   useEffect(() => {
     const checkExpiration = () => {
-      setDonations(currentDonations => {
-        let hasChanges = false;
+      donations.forEach(async (d) => {
         const now = Date.now();
-        const updated = currentDonations.map(d => {
-          if (d.status === 'available' && d.expiresAt < now) {
-             hasChanges = true;
-             return { ...d, status: 'expired' as const };
-          }
-          return d;
-        });
-        return hasChanges ? updated : currentDonations;
+        if (d.status === 'available' && d.expiresAt < now) {
+            // Update in Firebase
+            try {
+                await updateDoc(doc(db, 'donations', d.id), {
+                    status: 'expired'
+                });
+                console.log(`Expired donation ${d.id}`);
+            } catch (err) {
+                console.error("Error expiring donation", err);
+            }
+        }
       });
     };
 
-    // Run immediately on mount
-    checkExpiration();
-
-    // Check for expired donations every minute
     const interval = setInterval(checkExpiration, 60000); // 1 minute
-
     return () => clearInterval(interval);
-  }, []);
+  }, [donations]);
   
   const showToast = (message: string, type: 'success' | 'error' | 'neutral' = 'success') => {
     setNotification({ message, type });
@@ -88,9 +157,13 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    setCurrentUser(null);
-    setView('landing');
-    showToast("Logged out successfully", "neutral");
+    try {
+        await signOut(auth);
+        setView('landing');
+        showToast("Logged out successfully", "neutral");
+    } catch (error) {
+        showToast("Error logging out", "error");
+    }
   };
 
   const handleAddDonation = async (newDonationData: Omit<Donation, 'id' | 'timestamp' | 'createdAt' | 'status' | 'distance' | 'userId'>) => {
@@ -99,20 +172,24 @@ export default function App() {
     // Simulate random distance between 0.5 and 15.0 km
     const randomDistance = (Math.random() * 14.5 + 0.5).toFixed(1);
 
-    const newDonation: Donation = {
-        id: `local-${Date.now()}`,
+    const donationPayload = {
         userId: currentUser.id,
-        ...newDonationData, // This now includes expiresAt from DonorForm
+        ...newDonationData,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         createdAt: Date.now(),
         status: 'available',
         distance: `${randomDistance} km`
     };
 
-    setDonations(prev => [newDonation, ...prev]);
-    addNotificationLog(`Donation Posted: ${newDonationData.foodItems}`);
-    showToast("Thank you! Your donation has been listed.");
-    setView('donor-dashboard');
+    try {
+        await addDoc(collection(db, 'donations'), donationPayload);
+        addNotificationLog(`Donation Posted: ${newDonationData.foodItems}`);
+        showToast("Thank you! Your donation has been listed.");
+        setView('donor-dashboard');
+    } catch (error) {
+        console.error("Error adding document: ", error);
+        showToast("Failed to post donation. Check connection.", "error");
+    }
   };
 
   const handleClaimDonation = async (id: string) => {
@@ -129,74 +206,133 @@ export default function App() {
         return;
     }
 
-    // Check if expired (double check in case UI is stale)
     if (donation.expiresAt < Date.now()) {
         showToast("This donation has expired.", "error");
-        setDonations(prev => prev.map(d => d.id === id ? { ...d, status: 'expired' } : d));
+        // Force update DB just in case
+        await updateDoc(doc(db, 'donations', id), { status: 'expired' });
         return;
     }
 
-    const updatedDonation = {
-        ...donation,
-        status: 'claimed' as const,
-        claimedByUserId: currentUser?.id
-    };
-
-    setDonations(prev => prev.map(d => d.id === id ? updatedDonation : d));
-    addNotificationLog(`Booking Confirmed: ${donation.foodItems}`);
-    setClaimedDonation(updatedDonation);
+    try {
+        await updateDoc(doc(db, 'donations', id), {
+            status: 'claimed',
+            claimedByUserId: currentUser?.id
+        });
+        
+        const updatedDonation = { ...donation, status: 'claimed' as const, claimedByUserId: currentUser?.id };
+        addNotificationLog(`Booking Confirmed: ${donation.foodItems}`);
+        setClaimedDonation(updatedDonation);
+    } catch (error) {
+        showToast("Failed to claim donation.", "error");
+    }
   };
 
   const handleCompleteDonation = async (id: string) => {
-    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: 'completed' } : d));
-    showToast("Pickup confirmed! Thank you.", "success");
+    try {
+        await updateDoc(doc(db, 'donations', id), { status: 'completed' });
+        showToast("Pickup confirmed! Thank you.", "success");
+    } catch (error) {
+        showToast("Error updating status.", "error");
+    }
   };
 
   const handleCancelDonation = async (id: string) => {
-    setDonations(prev => prev.map(d => d.id === id ? { ...d, status: 'cancelled' } : d));
-    showToast("Donation cancelled", "neutral");
+    try {
+        await updateDoc(doc(db, 'donations', id), { status: 'cancelled' });
+        showToast("Donation cancelled", "neutral");
+    } catch (error) {
+        showToast("Error cancelling.", "error");
+    }
+  };
+  
+  // --- UTILS ---
+  const handleSeedData = async () => {
+    try {
+        for (const d of INITIAL_DONATIONS) {
+            // Remove the hardcoded ID so Firestore generates a unique one
+            const { id, ...data } = d;
+            // Update timestamps to be current so they aren't expired immediately
+            const freshData = {
+                ...data,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 4 * 60 * 60 * 1000, // 4 hours from now
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            await addDoc(collection(db, 'donations'), freshData);
+        }
+        showToast("Demo data added successfully!", "success");
+    } catch (error) {
+        console.error("Error seeding data:", error);
+        showToast("Failed to seed data.", "error");
+    }
   };
 
-  const handleLogin = async (phone: string, pass: string) => {
-      // Mock Login Logic
-      const foundUser = users.find(u => u.phone === phone && u.password === pass);
+  // --- AUTH HANDLERS (Mapped to Firebase) ---
 
-      if (foundUser) {
-          setCurrentUser(foundUser);
-          showToast("Login successful!");
-          setView('landing');
-      } else {
-          showToast("Invalid credentials. Try 1234567890 / 123", "error");
+  const getEmailFromPhone = (phone: string) => `${phone}@sharemeal.app`;
+
+  const handleLogin = async (phone: string, pass: string) => {
+      try {
+        const email = getEmailFromPhone(phone);
+        await signInWithEmailAndPassword(auth, email, pass);
+        showToast("Login successful!");
+        setView('landing');
+      } catch (error: any) {
+        console.error(error);
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+             showToast("Invalid Phone or Password.", "error");
+        } else {
+             showToast("Login failed: " + error.message, "error");
+        }
       }
   };
 
   const handleRegister = async (phone: string, pass: string, name: string) => {
-      // Mock Register Logic
-      const existingUser = users.find(u => u.phone === phone);
-      if (existingUser) {
-          showToast("Phone number already registered", "error");
-          return;
+      try {
+        const email = getEmailFromPhone(phone);
+        // 1. Create Auth User
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+        const user = userCredential.user;
+
+        // 2. Update Display Name
+        await updateProfile(user, { displayName: name });
+
+        // 3. Store extra details in Firestore 'users' collection
+        const newUser: User = {
+            id: user.uid,
+            name: name,
+            phone: phone,
+            isVerified: true
+        };
+        
+        await setDoc(doc(db, 'users', user.uid), newUser);
+
+        setCurrentUser(newUser); // Optimistic update
+        addNotificationLog(`Welcome to ShareMeal, ${name}!`);
+        showToast("Account created successfully!");
+        setView('landing');
+      } catch (error: any) {
+        if (error.code === 'auth/email-already-in-use') {
+            showToast("This phone number is already registered.", "error");
+        } else if (error.code === 'auth/weak-password') {
+            showToast("Password should be at least 6 characters.", "error");
+        } else {
+            showToast("Registration failed: " + error.message, "error");
+        }
       }
-
-      const newUser: User = {
-          id: `user-${Date.now()}`,
-          name,
-          phone,
-          password: pass,
-          isVerified: true // Auto-verify new users
-      };
-
-      setUsers(prev => [...prev, newUser]);
-      setCurrentUser(newUser);
-
-      addNotificationLog(`Welcome to ShareMeal, ${name}!`);
-      showToast("Account created successfully!");
-      setView('landing');
   };
+
+  if (isAuthLoading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-green-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+          </div>
+      );
+  }
 
   // --- RENDER ---
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 relative">
       <Navbar 
         view={view}
         setView={setView}
@@ -214,6 +350,15 @@ export default function App() {
                 {notification.message}
             </div>
         </div>
+      )}
+
+      {/* Helper Button to Seed Data if Empty */}
+      {donations.length === 0 && isLoggedIn && (
+          <div className="fixed bottom-6 right-6 z-40">
+              <Button onClick={handleSeedData} variant="secondary" className="shadow-xl bg-white/90 backdrop-blur border-green-200 text-xs">
+                  <Database className="h-4 w-4" /> Load Demo Data
+              </Button>
+          </div>
       )}
 
       {/* Contact Info Modal */}
