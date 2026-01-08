@@ -395,7 +395,7 @@ export const DonorDashboard: React.FC<DonorDashboardProps> = ({ donations, curre
                         </div>
                     )}
                     {myDonations.map((item) => (
-                        <li key={item.id} className="p-6 hover:bg-green-50 transition duration-200">
+                        <li key={item.id} className="p-6 hover:bg-green-50 transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-default">
                             <div className="flex items-center justify-between">
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center mb-1">
@@ -527,7 +527,7 @@ export const ReceiverDashboard: React.FC<ReceiverDashboardProps> = ({ donations,
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <div className="flex items-center gap-4 bg-gray-50 px-4 rounded-lg border border-gray-200">
+                <div className="flex items-center gap-4 bg-white px-4 rounded-lg border border-gray-200">
                      <Filter className="h-5 w-5 text-gray-500" />
                      <div className="flex-1">
                         <div className="flex justify-between text-xs text-gray-500 mb-1">
@@ -642,7 +642,7 @@ export const ReceiverBookings: React.FC<ReceiverBookingsProps> = ({ donations, c
         <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
              {/* Stats Grid */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-6 flex items-center gap-4">
+                <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-6 flex items-center gap-4 hover:shadow-lg transition-shadow duration-300">
                     <div className="p-3 rounded-full bg-orange-50 text-orange-600">
                         <Utensils className="h-8 w-8" />
                     </div>
@@ -652,7 +652,7 @@ export const ReceiverBookings: React.FC<ReceiverBookingsProps> = ({ donations, c
                     </div>
                 </div>
                 
-                <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-6 flex items-center gap-4">
+                <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-6 flex items-center gap-4 hover:shadow-lg transition-shadow duration-300">
                     <div className="p-3 rounded-full bg-blue-50 text-blue-600">
                         <History className="h-8 w-8" />
                     </div>
@@ -696,7 +696,7 @@ export const ReceiverBookings: React.FC<ReceiverBookingsProps> = ({ donations, c
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {displayedBookings.map(item => (
-                        <div key={item.id} className={`bg-white rounded-xl shadow-sm border p-6 flex flex-col md:flex-row gap-6 ${item.status === 'completed' || item.status === 'cancelled' ? 'border-gray-200 opacity-75' : 'border-l-4 border-l-green-500'} hover:shadow-lg transition-all duration-300`}>
+                        <div key={item.id} className={`bg-white rounded-xl shadow-sm border p-6 flex flex-col md:flex-row gap-6 ${item.status === 'completed' || item.status === 'cancelled' ? 'border-gray-200 opacity-75' : 'border-l-4 border-l-green-500'} hover:shadow-xl hover:-translate-y-1 transition-all duration-300`}>
                             <div className="flex-1">
                                 <div className="flex justify-between items-start mb-2">
                                     <h3 className="text-xl font-bold text-gray-900">{item.donorName}</h3>
@@ -724,7 +724,7 @@ export const ReceiverBookings: React.FC<ReceiverBookingsProps> = ({ donations, c
                                     <>
                                         <Button 
                                             onClick={() => onCompleteDonation(item.id)}
-                                            className="w-full text-xs sm:text-sm bg-green-600 text-white hover:bg-green-700"
+                                            className="w-full text-xs sm:text-sm bg-green-600 text-white hover:bg-green-700 hover:scale-105"
                                         >
                                             <CheckCircle className="h-4 w-4" /> I took the food
                                         </Button>
@@ -739,14 +739,14 @@ export const ReceiverBookings: React.FC<ReceiverBookingsProps> = ({ donations, c
                                         <Button 
                                             variant="outline" 
                                             onClick={() => onContact('phone', item.phoneNumber)}
-                                            className="flex-1 text-xs sm:text-sm bg-blue-50 text-blue-700 border-blue-200"
+                                            className="flex-1 text-xs sm:text-sm bg-blue-50 text-blue-700 border-blue-200 hover:scale-105"
                                         >
                                             <Phone className="h-4 w-4" /> Call
                                         </Button>
                                         <Button 
                                             variant="outline" 
                                             href={`https://wa.me/${item.phoneNumber}`}
-                                            className="flex-1 text-xs sm:text-sm bg-green-50 text-green-700 border-green-200"
+                                            className="flex-1 text-xs sm:text-sm bg-green-50 text-green-700 border-green-200 hover:scale-105"
                                         >
                                             <MessageCircle className="h-4 w-4" />
                                         </Button>

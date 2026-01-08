@@ -25,8 +25,7 @@ export default function App() {
 
   // --- EXPIRATION CHECKER ---
   useEffect(() => {
-    // Check for expired donations every minute
-    const interval = setInterval(() => {
+    const checkExpiration = () => {
       setDonations(currentDonations => {
         let hasChanges = false;
         const now = Date.now();
@@ -39,7 +38,13 @@ export default function App() {
         });
         return hasChanges ? updated : currentDonations;
       });
-    }, 60000); // 1 minute
+    };
+
+    // Run immediately on mount
+    checkExpiration();
+
+    // Check for expired donations every minute
+    const interval = setInterval(checkExpiration, 60000); // 1 minute
 
     return () => clearInterval(interval);
   }, []);
