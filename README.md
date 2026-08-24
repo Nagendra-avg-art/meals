@@ -98,24 +98,18 @@ The application will run on a local development URL displayed in your terminal.
 
 ---
 
-## 🔥 Firebase Setup
+## 🔥 Firebase
 
-This project uses Firebase for authentication and data management.
+This project uses Firebase for:
 
-Create a Firebase project and configure your Firebase credentials in the appropriate configuration file.
+- User Authentication
+- Firestore Database
+- Storing donation information
+- Managing users and food reservation data
 
-> ⚠️ Never upload private API keys, passwords, or secret credentials to GitHub.
+Firebase Authentication is used for user login and signup, while Cloud Firestore stores donation and user-related data.
 
-Use environment variables for sensitive information.
-
-Example:
-
-```env
-VITE_FIREBASE_API_KEY=your_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-VITE_FIREBASE_PROJECT_ID=your_project_id
-```
-
+> ⚠️ Firebase Security Rules should be properly configured to protect application data.
 ---
 
 ## 🎯 Problem Statement
