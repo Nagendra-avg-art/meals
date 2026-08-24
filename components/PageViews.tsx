@@ -21,7 +21,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ handleAuthRequired }) 
               <div className="sm:text-center lg:text-left">
                 <h1 className="text-4xl tracking-tight font-extrabold text-gray-900 sm:text-5xl md:text-6xl">
                   <span className="block xl:inline">Stop Food Waste,</span>{' '}
-                  <span className="block text-green-600 xl:inline">Feed a Soul.</span>
+                  <span className="block text-green-600 xl:inline">Feed More Lives.</span>
                 </h1>
                 <p className="mt-3 text-base text-gray-500 sm:mt-5 sm:text-lg sm:max-w-xl sm:mx-auto md:mt-5 md:text-xl lg:mx-0">
                   Connect surplus food from weddings, hotels, and homes with orphanages and people in need. A simple bridge between abundance and hunger.
